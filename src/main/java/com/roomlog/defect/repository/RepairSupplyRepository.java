@@ -8,4 +8,6 @@ import java.util.List;
 public interface RepairSupplyRepository extends JpaRepository<RepairSupply, Long> {
 
     List<RepairSupply> findByDefectTypeOrderBySortOrderAsc(String defectType);
+
+    List<RepairSupply> findByImageUrlIsNull();
 }

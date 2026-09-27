@@ -59,6 +59,11 @@ public class DefectRepairGuide {
         this.videos = videos;
     }
 
+    /** 준비물 이미지가 나중에 채워졌을 때 저장된 목록을 새로 바꾼다. */
+    public void updateItems(List<RepairItem> items) {
+        this.items = items;
+    }
+
     @Builder
     public DefectRepairGuide(Long defectId, boolean selfRepairPossible, String description,
                              List<RepairVideo> videos, String videoSearchQuery,

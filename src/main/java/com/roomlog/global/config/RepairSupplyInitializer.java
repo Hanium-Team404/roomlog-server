@@ -2,18 +2,22 @@ package com.roomlog.global.config;
 
 import com.roomlog.defect.domain.RepairSupply;
 import com.roomlog.defect.repository.RepairSupplyRepository;
+import com.roomlog.global.infra.KakaoImageClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
  * 하자 종류별 자가 수리 준비물 기본 데이터.
- * purchase_url은 우선 쿠팡 검색 링크로 넣어두고, 실제 상품 링크와 이미지는 운영 중 채워 넣는다.
+ * purchase_url은 우선 쿠팡 검색 링크로 넣어두고, 실제 상품 링크는 운영 중 채워 넣는다.
+ * 이미지는 쿠팡 검색어와 같은 검색어로 카카오 이미지 검색을 해서 채운다(쿠팡은 공개 API가 없다).
+ * 이미지가 비어 있는 행만 기동할 때마다 채우므로, 운영 중 직접 넣은 이미지는 덮어쓰지 않는다.
  */
 @Component
 @RequiredArgsConstructor
@@ -22,9 +26,15 @@ public class RepairSupplyInitializer implements ApplicationRunner {
     private static final String COUPANG_SEARCH_URL = "https://www.coupang.com/np/search?q=";
 
     private final RepairSupplyRepository repairSupplyRepository;
+    private final KakaoImageClient kakaoImageClient;
 
     @Override
     public void run(ApplicationArguments args) {
+        seedIfEmpty();
+        fillMissingImages();
+    }
+
+    private void seedIfEmpty() {
         if (repairSupplyRepository.count() > 0) return;
 
         repairSupplyRepository.saveAll(List.of(
@@ -47,6 +57,26 @@ public class RepairSupplyInitializer implements ApplicationRunner {
                 supply("BREAKAGE", "만능 접착제", 7500, "만능 접착제", 1),
                 supply("BREAKAGE", "보수용 퍼티", 9900, "보수용 퍼티", 2)
         ));
+    }
+
+    private void fillMissingImages() {
+        List<RepairSupply> missing = repairSupplyRepository.findByImageUrlIsNull();
+        for (RepairSupply supply : missing) {
+            String imageUrl = kakaoImageClient.searchFirstImageUrl(searchKeywordOf(supply));
+            if (imageUrl != null) {
+                supply.updateImageUrl(imageUrl);
+            }
+        }
+        repairSupplyRepository.saveAll(missing);
+    }
+
+    /** 쿠팡 검색 링크면 그 검색어를, 실제 상품 링크로 바뀌었으면 상품명을 쓴다. */
+    private String searchKeywordOf(RepairSupply supply) {
+        String url = supply.getPurchaseUrl();
+        if (url != null && url.startsWith(COUPANG_SEARCH_URL)) {
+            return URLDecoder.decode(url.substring(COUPANG_SEARCH_URL.length()), StandardCharsets.UTF_8);
+        }
+        return supply.getName();
     }
 
     private RepairSupply supply(String defectType, String name, int price, String searchKeyword, int sortOrder) {

@@ -56,7 +56,7 @@ public class SelfRepairService {
         DefectRepairGuide guide = defectRepairGuideRepository.findById(defectId)
                 .orElseGet(() -> generateAndSave(defect));
 
-        return GetSelfRepairResponse.from(retryVideoIfMissing(guide));
+        return GetSelfRepairResponse.from(refreshItemsIfImageMissing(retryVideoIfMissing(guide)));
     }
 
     /**
@@ -97,14 +97,12 @@ public class SelfRepairService {
                     .selfRepairPossible(false)
                     .description(generated.getDescription())
                     .items(List.of())
-                    .totalCost(0)
                     .build();
         }
 
         // GPT는 판정과 사유, 영상 검색어까지 만든다. 영상은 유튜브에서, 준비물은 준비물 테이블에서 가져온다.
         List<RepairVideo> videos = searchVideos(generated.getVideoSearchQuery());
         List<RepairItem> items = supplies(defect.getType());
-        int totalCost = items.stream().mapToInt(RepairItem::getPrice).sum();
 
         return DefectRepairGuide.builder()
                 .defectId(defect.getId())
@@ -113,7 +111,6 @@ public class SelfRepairService {
                 .videos(videos)
                 .videoSearchQuery(generated.getVideoSearchQuery())
                 .items(items)
-                .totalCost(totalCost)
                 .build();
     }
 
@@ -144,6 +141,27 @@ public class SelfRepairService {
         return defectRepairGuideRepository.save(guide);
     }
 
+    /**
+     * 준비물은 안내를 만들 때 복사해 저장하므로, 이미지가 채워지기 전에 만든 안내에는 이미지가 비어 있다.
+     * 비어 있는 준비물이 있으면 준비물 테이블에서 다시 읽어 바꿔 저장한다.
+     */
+    private DefectRepairGuide refreshItemsIfImageMissing(DefectRepairGuide guide) {
+        if (!guide.isSelfRepairPossible() || guide.getItems() == null) return guide;
+        boolean missing = guide.getItems().stream()
+                .anyMatch(item -> item.getImageUrl() == null || item.getImageUrl().isBlank());
+        if (!missing) return guide;
+
+        Defect defect = defectRepository.findById(guide.getDefectId()).orElse(null);
+        if (defect == null) return guide;
+
+        List<RepairItem> items = supplies(defect.getType());
+        boolean filled = items.stream().anyMatch(item -> item.getImageUrl() != null);
+        if (!filled) return guide;
+
+        guide.updateItems(items);
+        return defectRepairGuideRepository.save(guide);
+    }
+
     private List<RepairVideo> searchVideos(String searchQuery) {
         return youtubeClient.search(searchQuery, VIDEO_COUNT).stream()
                 .map(video -> new RepairVideo(video.title(), video.url(), video.thumbnailUrl(), video.channel()))
@@ -154,7 +172,7 @@ public class SelfRepairService {
     private List<RepairItem> supplies(String defectType) {
         return repairSupplyRepository.findByDefectTypeOrderBySortOrderAsc(defectType).stream()
                 .map(supply -> new RepairItem(
-                        supply.getName(), supply.getPrice(), supply.getImageUrl(), supply.getPurchaseUrl()))
+                        supply.getName(), supply.getImageUrl(), supply.getPurchaseUrl()))
                 .toList();
     }
 

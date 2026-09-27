@@ -23,16 +23,12 @@ public class GetSelfRepairResponse {
     /** 준비물 목록. 없으면 빈 배열. */
     private final List<RepairItem> items;
 
-    @JsonProperty("total_cost")
-    private final Integer totalCost;
-
     private GetSelfRepairResponse(DefectRepairGuide guide) {
         this.defectId = guide.getDefectId();
         this.selfRepairPossible = guide.isSelfRepairPossible();
         this.description = guide.getDescription();
         this.videos = guide.getVideos() != null ? guide.getVideos() : List.of();
         this.items = guide.getItems() != null ? guide.getItems() : List.of();
-        this.totalCost = guide.getTotalCost();
     }
 
     public static GetSelfRepairResponse from(DefectRepairGuide guide) {

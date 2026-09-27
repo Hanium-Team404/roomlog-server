@@ -52,4 +52,8 @@ public class RepairSupply {
         this.purchaseUrl = purchaseUrl;
         this.sortOrder = sortOrder != null ? sortOrder : 0;
     }
+
+    public void updateImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
+    }
 }

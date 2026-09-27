@@ -4,6 +4,7 @@ import com.roomlog.analysis.domain.Analysis;
 import com.roomlog.analysis.repository.AnalysisRepository;
 import com.roomlog.defect.domain.Defect;
 import com.roomlog.defect.repository.DefectRepository;
+import com.roomlog.defect.service.RepairCostCalculator;
 import com.roomlog.estimate.domain.Estimate;
 import com.roomlog.estimate.domain.EstimateDefect;
 import com.roomlog.estimate.dto.CreateEstimateRequest;
@@ -45,6 +46,7 @@ public class EstimateService {
     private final EstimateDefectRepository estimateDefectRepository;
     private final RepairRepository repairRepository;
     private final KakaoLocalClient kakaoLocalClient;
+    private final RepairCostCalculator repairCostCalculator;
 
     @Transactional(readOnly = true)
     public GetEstimateListResponse getEstimateList(Long userId, Long roomId) {
@@ -116,8 +118,9 @@ public class EstimateService {
         }
 
         List<Defect> defects = defectRepository.findByAnalysisId(request.getAnalysisId());
+        int visitFee = repairCostCalculator.visitFee(defects.stream().map(Defect::getType).toList());
 
-        return EstimatePreviewResponse.of(analysis.getId(), room.getId(), place, defects, request.getMessage());
+        return EstimatePreviewResponse.of(analysis.getId(), room.getId(), place, defects, visitFee, request.getMessage());
     }
 
     @Transactional

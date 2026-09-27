@@ -11,13 +11,11 @@ import com.roomlog.analysis.dto.GetAnalysisResponse;
 import com.roomlog.analysis.dto.GetAnalysisStatusResponse;
 import com.roomlog.analysis.dto.GetComparisonAnalysisListResponse;
 import com.roomlog.defect.domain.Defect;
-import com.roomlog.defect.domain.DefectUnitPrice;
-import com.roomlog.defect.domain.SeverityMultiplier;
 import com.roomlog.analysis.repository.AnalysisRepository;
 import com.roomlog.defect.dto.DefectItemResponse;
+import com.roomlog.defect.service.RepairCostCalculator;
 import com.roomlog.defect.service.SelfRepairService;
 import com.roomlog.defect.repository.DefectRepository;
-import com.roomlog.defect.repository.DefectUnitPriceRepository;
 import com.roomlog.global.exception.CustomException;
 import com.roomlog.global.exception.ErrorCode;
 import com.roomlog.global.infra.AiClient;
@@ -50,7 +48,7 @@ public class AnalysisService {
     private final ScanRepository scanRepository;
     private final DefectRepository defectRepository;
     private final SelfRepairService selfRepairService;
-    private final DefectUnitPriceRepository defectUnitPriceRepository;
+    private final RepairCostCalculator repairCostCalculator;
     private final AiClient aiClient;
 
     @Transactional(readOnly = true)
@@ -109,16 +107,8 @@ public class AnalysisService {
 
         List<Defect> defects = request.getDefects() == null ? List.of() : request.getDefects().stream()
                 .map(item -> {
-                    DefectUnitPrice unitPrice = defectUnitPriceRepository.findById(item.getType())
-                            .orElseThrow(() -> new CustomException(ErrorCode.COMMON_400));
-
-                    SeverityMultiplier severity;
-                    try {
-                        severity = SeverityMultiplier.valueOf(item.getSeverity().toUpperCase());
-                    } catch (IllegalArgumentException e) {
-                        throw new CustomException(ErrorCode.COMMON_400, "유효하지 않은 severity 값: " + item.getSeverity());
-                    }
-                    int estimatedCost = 10000 + (int) Math.ceil(unitPrice.getUnitPrice() * item.getArea() * severity.getMultiplier());
+                    // 하자별 금액에는 출장비를 넣지 않는다. 출장비는 총액에 한 번만 더한다.
+                    int estimatedCost = repairCostCalculator.defectCost(item.getType(), item.getSeverity(), item.getArea());
 
                     return Defect.builder()
                             .analysisId(analysisId)
@@ -137,8 +127,7 @@ public class AnalysisService {
 
         defectRepository.saveAll(defects);
 
-        int totalCost = defects.stream().mapToInt(Defect::getEstimatedCost).sum();
-        analysis.complete(totalCost);
+        analysis.complete(repairCostCalculator.totalCost(defects));
     }
 
     /**

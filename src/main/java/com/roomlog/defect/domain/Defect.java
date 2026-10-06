@@ -35,6 +35,7 @@ public class Defect {
     @Column(nullable = false)
     private String location;
 
+    /** 하자 면적(㎠). AI가 준 값 그대로 저장하고 앱에도 ㎠로 내려준다. */
     @Column(nullable = false)
     private Float area;
 

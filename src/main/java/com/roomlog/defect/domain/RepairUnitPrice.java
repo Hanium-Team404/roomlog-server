@@ -37,11 +37,30 @@ public class RepairUnitPrice {
     @Column(columnDefinition = "TEXT", nullable = false)
     private String basis;
 
+    /**
+     * 시공 최소 단위 면적(㎡). 업체는 하자 면적이 아니라 자재 규격 단위(벽지 1폭, 보드 1장)로 시공하므로,
+     * 비용은 하자 면적을 이 단위로 올림한 면적에 단가를 곱해 계산한다. 하자 면적 자체는 바꾸지 않는다.
+     */
+    @Column(name = "work_unit_area")
+    private Float workUnitArea;
+
+    /** 시공 단위 설명. 예: "벽지 1폭(폭 1.0m × 높이 2.4m)". */
+    @Column(name = "work_unit")
+    private String workUnit;
+
     @Builder
-    public RepairUnitPrice(String defectType, String severity, Integer unitPrice, String basis) {
+    public RepairUnitPrice(String defectType, String severity, Integer unitPrice, String basis,
+                           Float workUnitArea, String workUnit) {
         this.defectType = defectType;
         this.severity = severity;
         this.unitPrice = unitPrice;
         this.basis = basis;
+        this.workUnitArea = workUnitArea;
+        this.workUnit = workUnit;
+    }
+
+    public void updateWorkUnit(Float workUnitArea, String workUnit) {
+        this.workUnitArea = workUnitArea;
+        this.workUnit = workUnit;
     }
 }

@@ -105,7 +105,10 @@ public class AnalysisService {
 
         Map<String, String> imageUrlBySourceDefect = sourceDefectImageUrls(analysis);
 
+        // 면적(㎠)이 0이거나 없는 하자는 AI가 측정에 실패한 것이라 저장하지 않는다. 앱에도 안 내려가고 비용에도 안 들어간다.
+        // 면적은 AI가 준 ㎠ 그대로 저장하고 앱에도 ㎠로 내려준다. ㎡ 환산은 비용 계산 안에서만 한다.
         List<Defect> defects = request.getDefects() == null ? List.of() : request.getDefects().stream()
+                .filter(item -> item.getArea() != null && item.getArea() > 0)
                 .map(item -> {
                     // 하자별 금액에는 출장비를 넣지 않는다. 출장비는 총액에 한 번만 더한다.
                     int estimatedCost = repairCostCalculator.defectCost(item.getType(), item.getSeverity(), item.getArea());

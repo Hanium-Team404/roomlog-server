@@ -113,7 +113,7 @@ public class ChatService {
                 하자 종류: %s
                 심각도: %s
                 위치: %s (%s)
-                면적: %s㎡
+                면적: %s㎠
                 탐지 설명: %s
                 자가 수리 가능 여부(확정): %s
                 """.formatted(

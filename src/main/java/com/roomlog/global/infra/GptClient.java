@@ -78,7 +78,7 @@ public class GptClient {
                 하자 종류: %s
                 심각도: %s
                 위치: %s
-                면적: %s㎡
+                면적: %s㎠
                 탐지 설명: %s
                 """.formatted(
                 type,

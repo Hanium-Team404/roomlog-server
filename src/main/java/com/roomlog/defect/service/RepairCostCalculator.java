@@ -16,7 +16,7 @@ import java.util.Set;
 
 /**
  * 수리 예상 비용 계산.
- * 하자별 금액 = ㎡당 단가(종류, 심각도) × 시공 면적. 100원 단위로 올린다.
+ * 하자별 금액 = ㎡당 단가(종류, 심각도) × 시공 면적. 하자별 금액과 출장비는 100원 단위로 올린다.
  * 시공 면적 = 하자 면적을 시공 최소 단위(벽지 1폭, 보드 1장 등)로 올림한 값. 3㎠ 흠집도 벽지 1폭은 갈아야 하므로
  * 하자 면적에 단가를 그대로 곱하면 100원 같은 비현실적인 금액이 나온다. 하자 면적 자체는 바꾸지 않는다.
  * 총액 = 하자별 금액 합 + 포함된 하자 종류 중 가장 비싼 출장비 한 번.
@@ -44,7 +44,7 @@ public class RepairCostCalculator {
 
         double areaM2 = (areaCm2 != null ? areaCm2 : 0d) / CM2_PER_M2;
         double cost = unitPrice.getUnitPrice() * billedArea(areaM2, unitPrice.getWorkUnitArea());
-        return (int) (Math.ceil(cost / ROUNDING_UNIT) * ROUNDING_UNIT);
+        return roundUp(cost);
     }
 
     /** 하자 면적(㎡)을 시공 단위(㎡)로 올림. 면적이 0이어도 하자는 있으므로 최소 1단위. 단위가 없으면 하자 면적 그대로. */
@@ -54,13 +54,18 @@ public class RepairCostCalculator {
         return units * workUnitArea;
     }
 
-    /** 하자 종류 중 가장 비싼 출장비. 하자가 없으면 0. */
+    /** 하자 종류 중 가장 비싼 출장비. 하자별 금액과 같이 100원 단위로 올린다. 하자가 없으면 0. */
     public int visitFee(Collection<String> defectTypes) {
         if (defectTypes.isEmpty()) return 0;
-        return repairVisitFeeRepository.findAllById(Set.copyOf(defectTypes)).stream()
+        int fee = repairVisitFeeRepository.findAllById(Set.copyOf(defectTypes)).stream()
                 .mapToInt(RepairVisitFee::getFee)
                 .max()
                 .orElse(0);
+        return roundUp(fee);
+    }
+
+    private int roundUp(double amount) {
+        return (int) (Math.ceil(amount / ROUNDING_UNIT) * ROUNDING_UNIT);
     }
 
     public int totalCost(List<Defect> defects) {

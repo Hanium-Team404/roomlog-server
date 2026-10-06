@@ -70,6 +70,11 @@ public class GetComparisonAnalysisListResponse {
         @JsonProperty("defect_count")
         private final int defectCount;
 
+        /** 출장비. 업체가 한 번 방문해 함께 고치므로 하자별 금액에는 없고 총액에 한 번만 들어 있다. */
+        @JsonProperty("visit_fee")
+        private final int visitFee;
+
+        /** 하자별 금액 합 + 출장비. */
         @JsonProperty("total_cost")
         private final int totalCost;
 
@@ -85,6 +90,9 @@ public class GetComparisonAnalysisListResponse {
         private Summary(Analysis analysis, List<DefectItemResponse> defects) {
             this.defectCount = defects.size();
             this.totalCost = analysis.getTotalCost() != null ? analysis.getTotalCost() : 0;
+            // 저장된 총액에서 하자별 금액을 뺀 값이라, 출장비가 없던 예전 분석도 하자 합 + 출장비 = 총액이 맞는다.
+            int defectSum = defects.stream().mapToInt(DefectItemResponse::getEstimatedCost).sum();
+            this.visitFee = Math.max(0, this.totalCost - defectSum);
             this.highCount = defects.stream().filter(d -> "HIGH".equalsIgnoreCase(d.getSeverity())).count();
             this.midCount = defects.stream().filter(d -> "MEDIUM".equalsIgnoreCase(d.getSeverity()) || "MID".equalsIgnoreCase(d.getSeverity())).count();
             this.lowCount = defects.stream().filter(d -> "LOW".equalsIgnoreCase(d.getSeverity())).count();

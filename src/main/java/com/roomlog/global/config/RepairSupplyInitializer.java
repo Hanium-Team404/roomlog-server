@@ -54,8 +54,11 @@ public class RepairSupplyInitializer implements ApplicationRunner {
                 supply("STAIN", "다목적 세정제", 6500, "다목적 세정제", 2),
                 supply("STAIN", "방수 코팅 스프레이", 12000, "방수 코팅 스프레이", 3),
 
-                supply("BREAKAGE", "만능 접착제", 7500, "만능 접착제", 1),
-                supply("BREAKAGE", "보수용 퍼티", 9900, "보수용 퍼티", 2)
+                // 카카오 이미지 검색이 엉뚱한 사진(유튜브 썸네일, 블로그 배너)을 돌려줘서 제품 사진으로 고정
+                supply("BREAKAGE", "만능 접착제", 7500, "만능 접착제", 1,
+                        "https://st.kakaocdn.net/shophow/p/B5266708563.jpg?ut=20260221001830"),
+                supply("BREAKAGE", "보수용 퍼티", 9900, "보수용 퍼티", 2,
+                        "https://st.kakaocdn.net/shophow/p/A5266741072.jpg?ut=20260221002338")
         ));
     }
 
@@ -80,10 +83,17 @@ public class RepairSupplyInitializer implements ApplicationRunner {
     }
 
     private RepairSupply supply(String defectType, String name, int price, String searchKeyword, int sortOrder) {
+        return supply(defectType, name, price, searchKeyword, sortOrder, null);
+    }
+
+    /** imageUrl을 주면 기동 시 이미지 검색을 건너뛰고 그 사진을 그대로 쓴다. */
+    private RepairSupply supply(String defectType, String name, int price, String searchKeyword, int sortOrder,
+                                String imageUrl) {
         return RepairSupply.builder()
                 .defectType(defectType)
                 .name(name)
                 .price(price)
+                .imageUrl(imageUrl)
                 .purchaseUrl(COUPANG_SEARCH_URL + URLEncoder.encode(searchKeyword, StandardCharsets.UTF_8))
                 .sortOrder(sortOrder)
                 .build();

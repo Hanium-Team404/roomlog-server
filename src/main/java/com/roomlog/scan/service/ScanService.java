@@ -16,10 +16,13 @@ import com.roomlog.scan.dto.GetScanResponse;
 import com.roomlog.scan.dto.GetScanStatusResponse;
 import com.roomlog.scan.repository.ScanRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ScanService {
@@ -29,39 +32,66 @@ public class ScanService {
     private final RoomRepository roomRepository;
     private final R2FileUploader r2FileUploader;
     private final AiClient aiClient;
+    private final TransactionTemplate transactionTemplate;
 
-    @Transactional
+    /**
+     * 스캔 업로드. R2 업로드와 AI 서버 호출은 수십 초가 걸릴 수 있어 트랜잭션 안에서 하지 않는다.
+     * 1) 트랜잭션: 검증 + SCANNING 스캔 저장  2) R2 업로드  3) 트랜잭션: 파일 URL 저장
+     * 4) AI 서버 호출. 실패하면 별도 트랜잭션으로 FAILED 처리
+     */
     public CreateScanResponse uploadScan(Long userId, MultipartFile file, CreateScanRequest request) {
         if (file == null || file.isEmpty()) {
             throw new CustomException(ErrorCode.COMMON_400, "스캔 파일이 없습니다.");
         }
 
-        houseRepository.findByIdAndUserId(request.getHouseId(), userId)
-                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_403));
+        Long scanId = transactionTemplate.execute(status -> {
+            houseRepository.findByIdAndUserId(request.getHouseId(), userId)
+                    .orElseThrow(() -> new CustomException(ErrorCode.COMMON_403));
 
-        Scan scan = Scan.builder()
-                .userId(userId)
-                .houseId(request.getHouseId())
-                .status(Scan.Status.SCANNING)
-                .build();
-        scanRepository.save(scan);
+            Scan scan = Scan.builder()
+                    .userId(userId)
+                    .houseId(request.getHouseId())
+                    .status(Scan.Status.SCANNING)
+                    .build();
+            return scanRepository.save(scan).getId();
+        });
 
         String originalFilename = file.getOriginalFilename();
         String extension = (originalFilename != null && originalFilename.contains("."))
                 ? originalFilename.substring(originalFilename.lastIndexOf("."))
                 : ".zip";
-        String key = "scans/" + scan.getId() + "/model" + extension;
-        String fileUrl = r2FileUploader.upload(file, key);
-        scan.updateFileUrl(fileUrl);
+        String key = "scans/" + scanId + "/model" + extension;
+
+        String fileUrl;
+        try {
+            fileUrl = r2FileUploader.upload(file, key);
+        } catch (Exception e) {
+            markFailed(scanId);
+            throw e;
+        }
+
+        Scan scan = transactionTemplate.execute(status -> {
+            Scan s = scanRepository.findById(scanId)
+                    .orElseThrow(() -> new CustomException(ErrorCode.SCAN_001));
+            s.updateFileUrl(fileUrl);
+            return s;
+        });
 
         try {
             aiClient.requestReconstruction(new AiReconstructionRequest(
-                    scan.getId(), fileUrl, aiClient.scanCallbackUrl(scan.getId())));
+                    scanId, fileUrl, aiClient.scanCallbackUrl(scanId)));
         } catch (Exception e) {
+            log.error("AI 재구성 요청 실패 - scanId: {}, error: {}", scanId, e.getMessage(), e);
+            markFailed(scanId);
             scan.fail();
         }
 
         return CreateScanResponse.from(scan);
+    }
+
+    private void markFailed(Long scanId) {
+        transactionTemplate.executeWithoutResult(status ->
+                scanRepository.findById(scanId).ifPresent(Scan::fail));
     }
 
     @Transactional(readOnly = true)

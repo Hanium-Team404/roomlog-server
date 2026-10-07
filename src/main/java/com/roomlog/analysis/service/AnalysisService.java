@@ -29,6 +29,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDateTime;
+import java.time.Duration;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -50,6 +53,7 @@ public class AnalysisService {
     private final SelfRepairService selfRepairService;
     private final RepairCostCalculator repairCostCalculator;
     private final AiClient aiClient;
+    private final TransactionTemplate transactionTemplate;
 
     @Transactional(readOnly = true)
     public GetAnalysisResponse getAnalysis(Long userId, Long analysisId) {
@@ -210,18 +214,46 @@ public class AnalysisService {
         return DeleteAnalysisResponse.of(analysisId);
     }
 
-    @Transactional
+    /** 같은 방에 이 시간 안에 만들어진 PENDING 분석이 있으면 새 요청을 거부한다(연타 방지). 이보다 오래 걸린 건 유실로 보고 재요청을 허용한다. */
+    private static final Duration IN_PROGRESS_WINDOW = Duration.ofMinutes(10);
+
+    /**
+     * 분석 생성. AI 서버 호출은 최대 30초가 걸릴 수 있어 트랜잭션 안에서 하지 않는다.
+     * 1) 트랜잭션: 검증 + PENDING 분석 저장 + AI 요청 본문 준비 (커밋되면 콜백이 와도 분석을 찾을 수 있다)
+     * 2) 트랜잭션 밖: AI 서버 호출. 실패하면 별도 트랜잭션으로 FAILED 처리
+     */
     public CreateAnalysisResponse createAnalysis(Long userId, CreateAnalysisRequest request) {
+        PreparedAnalysis prepared = transactionTemplate.execute(status -> prepareAnalysis(userId, request));
+        Analysis analysis = prepared.analysis();
+
+        try {
+            prepared.aiRequest().run();
+        } catch (Exception e) {
+            log.error("AI 요청 실패 - analysisId: {}, error: {}", analysis.getId(), e.getMessage(), e);
+            markFailed(analysis.getId());
+            analysis.fail();
+        }
+
+        return CreateAnalysisResponse.of(analysis);
+    }
+
+    private record PreparedAnalysis(Analysis analysis, Runnable aiRequest) {}
+
+    private PreparedAnalysis prepareAnalysis(Long userId, CreateAnalysisRequest request) {
         Room room = roomRepository.findById(request.getInRoomId())
                 .orElseThrow(() -> new CustomException(ErrorCode.ROOM_001));
 
         houseRepository.findByIdAndUserId(room.getHouseId(), userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.ROOM_002));
 
+        if (analysisRepository.existsByRoomIdAndStatusAndCreatedAtAfter(
+                request.getInRoomId(), Analysis.Status.PENDING, LocalDateTime.now().minus(IN_PROGRESS_WINDOW))) {
+            throw new CustomException(ErrorCode.ANALYSIS_005);
+        }
+
         Scan inScan = scanRepository.findFirstByRoomIdAndStatusOrderByCreatedAtDesc(request.getInRoomId(), Scan.Status.COMPLETED)
                 .orElseThrow(() -> new CustomException(ErrorCode.ANALYSIS_003));
 
-        Long outScanId = null;
         Scan outScan = null;
         if (request.getOutRoomId() != null) {
             Room outRoom = roomRepository.findById(request.getOutRoomId())
@@ -232,58 +264,51 @@ public class AnalysisService {
 
             outScan = scanRepository.findFirstByRoomIdAndStatusOrderByCreatedAtDesc(request.getOutRoomId(), Scan.Status.COMPLETED)
                     .orElseThrow(() -> new CustomException(ErrorCode.ANALYSIS_003));
-
-            outScanId = outScan.getId();
         }
 
         Analysis analysis = Analysis.builder()
                 .roomId(request.getInRoomId())
                 .inScanId(inScan.getId())
-                .outScanId(outScanId)
+                .outScanId(outScan != null ? outScan.getId() : null)
                 .build();
         analysisRepository.save(analysis);
 
-        try {
-            if (outScan != null) {
-
-                List<AiCompareRequest.DefectItem> inDefects = analysisRepository
-                        .findFirstByInScanIdAndStatusOrderByCreatedAtDesc(inScan.getId(), Analysis.Status.COMPLETED)
-                        .map(prev -> defectRepository.findByAnalysisId(prev.getId()).stream()
-                                .map(d -> new AiCompareRequest.DefectItem(
-                                        d.getType(), d.getSeverity(), d.getLocation(),
-                                        d.getArea(), d.getDescription(), d.getImageUrl(), d.getRegion3d()))
-                                .toList())
-                        .orElse(Collections.emptyList());
-
-                List<AiCompareRequest.DefectItem> outDefects = analysisRepository
-                        .findFirstByInScanIdAndStatusOrderByCreatedAtDesc(outScan.getId(), Analysis.Status.COMPLETED)
-                        .map(prev -> defectRepository.findByAnalysisId(prev.getId()).stream()
-                                .map(d -> new AiCompareRequest.DefectItem(
-                                        d.getType(), d.getSeverity(), d.getLocation(),
-                                        d.getArea(), d.getDescription(), d.getImageUrl(), d.getRegion3d()))
-                                .toList())
-                        .orElse(Collections.emptyList());
-
-                aiClient.requestDefectComparison(new AiCompareRequest(
-                        analysis.getId(),
-                        inScan.getId(),
-                        inDefects.isEmpty() ? inScan.getFileUrl() : null,
-                        inDefects.isEmpty() ? null : inDefects,
-                        outScan.getId(),
-                        outDefects.isEmpty() ? outScan.getFileUrl() : null,
-                        outDefects.isEmpty() ? null : outDefects,
-                        aiClient.analysisCallbackUrl(analysis.getId())));
-            } else {
-                aiClient.requestDefectDetection(new AiDetectionRequest(
-                        analysis.getId(), inScan.getId(), inScan.getFileUrl(),
-                        aiClient.analysisCallbackUrl(analysis.getId())));
-            }
-        } catch (Exception e) {
-            log.error("AI 요청 실패 - analysisId: {}, error: {}", analysis.getId(), e.getMessage(), e);
-            analysis.fail();
+        String callbackUrl = aiClient.analysisCallbackUrl(analysis.getId());
+        if (outScan == null) {
+            AiDetectionRequest aiRequest = new AiDetectionRequest(
+                    analysis.getId(), inScan.getId(), inScan.getFileUrl(), callbackUrl);
+            return new PreparedAnalysis(analysis, () -> aiClient.requestDefectDetection(aiRequest));
         }
 
-        return CreateAnalysisResponse.of(analysis);
+        List<AiCompareRequest.DefectItem> inDefects = latestDefectsOf(inScan.getId());
+        List<AiCompareRequest.DefectItem> outDefects = latestDefectsOf(outScan.getId());
+        AiCompareRequest aiRequest = new AiCompareRequest(
+                analysis.getId(),
+                inScan.getId(),
+                inDefects.isEmpty() ? inScan.getFileUrl() : null,
+                inDefects.isEmpty() ? null : inDefects,
+                outScan.getId(),
+                outDefects.isEmpty() ? outScan.getFileUrl() : null,
+                outDefects.isEmpty() ? null : outDefects,
+                callbackUrl);
+        return new PreparedAnalysis(analysis, () -> aiClient.requestDefectComparison(aiRequest));
+    }
+
+    /** 해당 스캔으로 완료된 가장 최근 분석의 하자 목록. 없으면 빈 목록. */
+    private List<AiCompareRequest.DefectItem> latestDefectsOf(Long scanId) {
+        return analysisRepository
+                .findFirstByInScanIdAndStatusOrderByCreatedAtDesc(scanId, Analysis.Status.COMPLETED)
+                .map(prev -> defectRepository.findByAnalysisId(prev.getId()).stream()
+                        .map(d -> new AiCompareRequest.DefectItem(
+                                d.getType(), d.getSeverity(), d.getLocation(),
+                                d.getArea(), d.getDescription(), d.getImageUrl(), d.getRegion3d()))
+                        .toList())
+                .orElse(Collections.emptyList());
+    }
+
+    private void markFailed(Long analysisId) {
+        transactionTemplate.executeWithoutResult(status ->
+                analysisRepository.findById(analysisId).ifPresent(Analysis::fail));
     }
 
 }

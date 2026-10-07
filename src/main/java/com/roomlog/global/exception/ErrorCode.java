@@ -38,6 +38,7 @@ public enum ErrorCode {
     ANALYSIS_002(HttpStatus.BAD_REQUEST, "ANALYSIS_002", "이미 처리된 분석입니다."),
     ANALYSIS_003(HttpStatus.BAD_REQUEST, "ANALYSIS_003", "선택한 스캔 조합이 올바르지 않거나 비교 가능한 스캔이 부족합니다."),
     ANALYSIS_004(HttpStatus.BAD_REQUEST, "ANALYSIS_004", "분석이 아직 완료되지 않았습니다."),
+    ANALYSIS_005(HttpStatus.CONFLICT, "ANALYSIS_005", "해당 방에 진행 중인 분석이 있습니다. 잠시 후 다시 시도해 주세요."),
 
     // Defect
     DEFECT_001(HttpStatus.NOT_FOUND, "DEFECT_001", "존재하지 않는 하자 정보입니다."),

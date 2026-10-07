@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,4 +20,5 @@ public interface AnalysisRepository extends JpaRepository<Analysis, Long> {
     Optional<Analysis> findFirstByInScanIdAndStatusOrderByCreatedAtDesc(Long inScanId, Analysis.Status status);
 
     List<Analysis> findByRoomIdInAndOutScanIdIsNotNullOrderByCreatedAtDesc(List<Long> roomIds);
+    boolean existsByRoomIdAndStatusAndCreatedAtAfter(Long roomId, Analysis.Status status, LocalDateTime after);
 }

@@ -6,6 +6,7 @@ import com.roomlog.scan.domain.Scan;
 import lombok.Getter;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Getter
@@ -53,25 +54,32 @@ public class GetHouseRoomsResponse {
         @JsonProperty("move_in_date")
         private final LocalDate moveInDate;
 
+        /** 최신 스캔 생성 시각(초 단위). 같은 날 스캔한 방끼리도 이전/이후 순서를 가릴 수 있게 한다. 스캔이 없으면 null. */
+        @JsonProperty("recent_scan_date")
+        private final LocalDateTime recentScanDate;
+
         @JsonProperty("latest_scan_status")
         private final String latestScanStatus;
 
         private RoomItem(Long roomId, String name, String plyUrl, String thumbnailUrl,
-                         LatestScanInfo latestScan, LocalDate moveInDate, String latestScanStatus) {
+                         LatestScanInfo latestScan, LocalDate moveInDate, LocalDateTime recentScanDate,
+                         String latestScanStatus) {
             this.roomId = roomId;
             this.name = name;
             this.plyUrl = plyUrl;
             this.thumbnailUrl = thumbnailUrl;
             this.latestScan = latestScan;
             this.moveInDate = moveInDate;
+            this.recentScanDate = recentScanDate;
             this.latestScanStatus = latestScanStatus;
         }
 
         public static RoomItem of(Room room, Scan scan) {
             LatestScanInfo latestScanInfo = scan != null ? LatestScanInfo.from(scan) : null;
+            LocalDateTime recentScanDate = scan != null ? scan.getCreatedAt() : null;
             String latestScanStatus = scan != null ? scan.getStatus().name() : null;
             return new RoomItem(room.getId(), room.getName(), room.getPlyUrl(), room.getThumbnailUrl(),
-                    latestScanInfo, room.getMoveInDate(), latestScanStatus);
+                    latestScanInfo, room.getMoveInDate(), recentScanDate, latestScanStatus);
         }
 
         @Getter

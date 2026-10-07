@@ -5,8 +5,8 @@ import com.roomlog.analysis.dto.AiDeleteDefectImagesRequest;
 import com.roomlog.analysis.dto.AiDetectionRequest;
 import com.roomlog.scan.dto.AiReconstructionRequest;
 import com.fasterxml.jackson.databind.JsonNode;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -19,7 +19,6 @@ import java.util.List;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class AiClient {
 
     private static final String API_KEY_HEADER = "X-Api-Key";
@@ -34,6 +33,10 @@ public class AiClient {
 
     @Value("${ai.callback-base-url}")
     private String callbackBaseUrl;
+
+    public AiClient(@Qualifier("aiRestTemplate") RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
 
     public String analysisCallbackUrl(Long analysisId) {
         return callbackBaseUrl + "/analyses/" + analysisId + "/result";

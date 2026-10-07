@@ -19,6 +19,7 @@ import com.roomlog.defect.repository.DefectRepository;
 import com.roomlog.global.exception.CustomException;
 import com.roomlog.global.exception.ErrorCode;
 import com.roomlog.global.infra.AiClient;
+import com.roomlog.global.infra.AiRequestDispatcher;
 import com.roomlog.house.repository.HouseRepository;
 import com.roomlog.room.domain.Room;
 import com.roomlog.room.repository.RoomRepository;
@@ -54,6 +55,7 @@ public class AnalysisService {
     private final RepairCostCalculator repairCostCalculator;
     private final AiClient aiClient;
     private final TransactionTemplate transactionTemplate;
+    private final AiRequestDispatcher aiRequestDispatcher;
 
     @Transactional(readOnly = true)
     public GetAnalysisResponse getAnalysis(Long userId, Long analysisId) {
@@ -214,25 +216,23 @@ public class AnalysisService {
         return DeleteAnalysisResponse.of(analysisId);
     }
 
-    /** 같은 방에 이 시간 안에 만들어진 PENDING 분석이 있으면 새 요청을 거부한다(연타 방지). 이보다 오래 걸린 건 유실로 보고 재요청을 허용한다. */
-    private static final Duration IN_PROGRESS_WINDOW = Duration.ofMinutes(10);
+    /**
+     * 같은 방에 이 시간 안에 만들어진 PENDING 분석이 있으면 새 요청을 거부한다(연타 방지).
+     * AI 접수 대기(최대 5분) + 탐지 시간을 넉넉히 덮는 값이며, 이보다 오래 걸린 건 유실로 보고 재요청을 허용한다.
+     */
+    private static final Duration IN_PROGRESS_WINDOW = Duration.ofMinutes(30);
 
     /**
-     * 분석 생성. AI 서버 호출은 최대 30초가 걸릴 수 있어 트랜잭션 안에서 하지 않는다.
+     * 분석 생성. 앱에는 PENDING을 바로 돌려주고 AI 서버 호출은 백그라운드에서 한다.
      * 1) 트랜잭션: 검증 + PENDING 분석 저장 + AI 요청 본문 준비 (커밋되면 콜백이 와도 분석을 찾을 수 있다)
-     * 2) 트랜잭션 밖: AI 서버 호출. 실패하면 별도 트랜잭션으로 FAILED 처리
+     * 2) 백그라운드: AI 서버 호출(접수까지 최대 5분 대기). 실패하면 별도 트랜잭션으로 FAILED 처리 → 앱이 폴링으로 확인
      */
     public CreateAnalysisResponse createAnalysis(Long userId, CreateAnalysisRequest request) {
         PreparedAnalysis prepared = transactionTemplate.execute(status -> prepareAnalysis(userId, request));
         Analysis analysis = prepared.analysis();
+        Long analysisId = analysis.getId();
 
-        try {
-            prepared.aiRequest().run();
-        } catch (Exception e) {
-            log.error("AI 요청 실패 - analysisId: {}, error: {}", analysis.getId(), e.getMessage(), e);
-            markFailed(analysis.getId());
-            analysis.fail();
-        }
+        aiRequestDispatcher.dispatch("analysisId=" + analysisId, prepared.aiRequest(), () -> markFailed(analysisId));
 
         return CreateAnalysisResponse.of(analysis);
     }

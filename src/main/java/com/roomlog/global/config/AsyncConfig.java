@@ -28,4 +28,21 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * AI 서버 요청(재구성·하자 탐지·비교) 전송용 스레드 풀.
+     * AI 서버가 탐지 중일 때는 접수 응답이 수 분 늦어질 수 있어 HTTP 요청 스레드에서 기다리지 않고 여기서 보낸다.
+     * 버리면 분석이 영영 PENDING으로 남으므로 큐가 차면 호출 스레드에서 직접 보낸다(CallerRunsPolicy).
+     */
+    @Bean("aiRequestExecutor")
+    public Executor aiRequestExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("ai-request-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
 }

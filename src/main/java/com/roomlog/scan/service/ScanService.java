@@ -3,6 +3,7 @@ package com.roomlog.scan.service;
 import com.roomlog.global.exception.CustomException;
 import com.roomlog.global.exception.ErrorCode;
 import com.roomlog.global.infra.AiClient;
+import com.roomlog.global.infra.AiRequestDispatcher;
 import com.roomlog.global.infra.R2FileUploader;
 import com.roomlog.house.repository.HouseRepository;
 import com.roomlog.room.repository.RoomRepository;
@@ -33,11 +34,12 @@ public class ScanService {
     private final R2FileUploader r2FileUploader;
     private final AiClient aiClient;
     private final TransactionTemplate transactionTemplate;
+    private final AiRequestDispatcher aiRequestDispatcher;
 
     /**
-     * 스캔 업로드. R2 업로드와 AI 서버 호출은 수십 초가 걸릴 수 있어 트랜잭션 안에서 하지 않는다.
+     * 스캔 업로드. R2 업로드는 수십 초가 걸릴 수 있어 트랜잭션 안에서 하지 않는다.
      * 1) 트랜잭션: 검증 + SCANNING 스캔 저장  2) R2 업로드  3) 트랜잭션: 파일 URL 저장
-     * 4) AI 서버 호출. 실패하면 별도 트랜잭션으로 FAILED 처리
+     * 4) 백그라운드: AI 서버 재구성 요청(접수까지 최대 5분 대기). 실패하면 FAILED 처리 → 앱이 폴링으로 확인
      */
     public CreateScanResponse uploadScan(Long userId, MultipartFile file, CreateScanRequest request) {
         if (file == null || file.isEmpty()) {
@@ -77,14 +79,10 @@ public class ScanService {
             return s;
         });
 
-        try {
-            aiClient.requestReconstruction(new AiReconstructionRequest(
-                    scanId, fileUrl, aiClient.scanCallbackUrl(scanId)));
-        } catch (Exception e) {
-            log.error("AI 재구성 요청 실패 - scanId: {}, error: {}", scanId, e.getMessage(), e);
-            markFailed(scanId);
-            scan.fail();
-        }
+        AiReconstructionRequest aiRequest = new AiReconstructionRequest(
+                scanId, fileUrl, aiClient.scanCallbackUrl(scanId));
+        aiRequestDispatcher.dispatch("scanId=" + scanId,
+                () -> aiClient.requestReconstruction(aiRequest), () -> markFailed(scanId));
 
         return CreateScanResponse.from(scan);
     }

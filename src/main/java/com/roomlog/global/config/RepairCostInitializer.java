@@ -23,10 +23,7 @@ import java.util.List;
  *  G2 석고판2겹 = 석고판 못붙임 바탕용 2겹/벽 OC311.00020 13,927 + 석고보드 4,400                    = 18,327
  *  P1 페인트1회 = 수성페인트 롤러칠 1회/벽 NC102.20000 3,380 + 페인트 2,750(1L 16,500원, 1회 약 6㎡)  = 6,130
  *
- * [시공 단위] 업체는 하자 면적이 아니라 자재 규격 단위로 시공하므로, 비용은 하자 면적을 아래 단위로 올림해 계산한다.
- *  도배 포함 공정 = 벽지 1폭 2.4㎡ (실크벽지 폭 약 1.0m × 천장 높이 2.4m. 이음새 때문에 흠집 하나여도 1폭을 간다)
- *  페인트만      = 1.0㎡ (터치업 최소 작업 범위)
- *  석고보드 1장(0.9m × 1.8m = 1.62㎡)은 그 위에 도배 1폭이 올라가므로 도배 단위를 따른다.
+ * [계산] 하자별 비용 = 기본료 5,000원 + (㎡당 단가 ÷ 100)원/㎠ × 하자 면적(㎠). 자세한 이유는 RepairCostCalculator 참고.
  *
  * [출장비] 2026.09.01 적용 건설업 시중노임단가(대한건설협회) 해당 직종 일당의 0.5일분.
  *
@@ -38,18 +35,12 @@ public class RepairCostInitializer implements ApplicationRunner {
 
     private static final String STANDARD_PRICE = "2026 하반기 표준시장단가";
 
-    private static final float WALLPAPER_UNIT_AREA = 2.4f;
-    private static final String WALLPAPER_UNIT = "벽지 1폭(폭 1.0m × 높이 2.4m)";
-    private static final float PAINT_UNIT_AREA = 1.0f;
-    private static final String PAINT_UNIT = "페인트 터치업 최소 1㎡";
-
     private final RepairUnitPriceRepository repairUnitPriceRepository;
     private final RepairVisitFeeRepository repairVisitFeeRepository;
 
     @Override
     public void run(ApplicationArguments args) {
         seedUnitPrices();
-        fillMissingWorkUnits();
         seedVisitFees();
     }
 
@@ -88,28 +79,6 @@ public class RepairCostInitializer implements ApplicationRunner {
         ));
     }
 
-    /** 시공 단위 컬럼이 추가되기 전에 들어간 단가 행에 단위를 채운다. 이미 값이 있는 행은 건드리지 않는다. */
-    private void fillMissingWorkUnits() {
-        List<RepairUnitPrice> missing = repairUnitPriceRepository.findAll().stream()
-                .filter(price -> price.getWorkUnitArea() == null)
-                .toList();
-        if (missing.isEmpty()) return;
-
-        for (RepairUnitPrice price : missing) {
-            if (isPaintOnly(price.getDefectType(), price.getSeverity())) {
-                price.updateWorkUnit(PAINT_UNIT_AREA, PAINT_UNIT);
-            } else {
-                price.updateWorkUnit(WALLPAPER_UNIT_AREA, WALLPAPER_UNIT);
-            }
-        }
-        repairUnitPriceRepository.saveAll(missing);
-    }
-
-    /** 오염 LOW만 페인트 덧칠로 끝난다. 나머지는 전부 도배 공정이 들어간다. */
-    private boolean isPaintOnly(String defectType, String severity) {
-        return "STAIN".equals(defectType) && "LOW".equals(severity);
-    }
-
     private void seedVisitFees() {
         if (repairVisitFeeRepository.count() > 0) return;
 
@@ -123,14 +92,11 @@ public class RepairCostInitializer implements ApplicationRunner {
     }
 
     private RepairUnitPrice price(String defectType, String severity, int unitPrice, String... processes) {
-        boolean paintOnly = isPaintOnly(defectType, severity);
         return RepairUnitPrice.builder()
                 .defectType(defectType)
                 .severity(severity)
                 .unitPrice(unitPrice)
                 .basis(STANDARD_PRICE + ": " + String.join(" + ", processes))
-                .workUnitArea(paintOnly ? PAINT_UNIT_AREA : WALLPAPER_UNIT_AREA)
-                .workUnit(paintOnly ? PAINT_UNIT : WALLPAPER_UNIT)
                 .build();
     }
 

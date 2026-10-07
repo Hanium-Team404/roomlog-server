@@ -1,6 +1,7 @@
 -- 기존 하자의 예상 비용을 ㎠ 단가 기준으로 재계산 (코드 변경과 같은 식)
 --
--- 하자별 비용 = CEIL((5000 + (㎡ 단가 ÷ 100) × MAX(면적㎠, 1)) / 100) × 100
+-- 하자별 비용 = CEIL((5000 + ㎠단가 × MIN(면적, 2000) + ㎠단가 × 0.5 × MAX(면적 − 2000, 0)) / 100) × 100
+--   (㎠단가 = ㎡ 단가 ÷ 100, 면적은 최소 1㎠)
 -- 분석 총액   = 하자별 비용 합 + 가장 비싼 하자 종류 출장비(100원 단위 올림)
 --
 -- 사용법:
@@ -11,7 +12,11 @@ START TRANSACTION;
 
 UPDATE defect d
 JOIN repair_unit_price p ON p.defect_type = d.type AND p.severity = d.severity
-SET d.estimated_cost = CEIL((5000 + (p.unit_price / 100) * GREATEST(IFNULL(d.area, 0), 1)) / 100) * 100;
+SET d.estimated_cost = CEIL((
+        5000
+        + (p.unit_price / 100) * LEAST(GREATEST(IFNULL(d.area, 0), 1), 2000)
+        + (p.unit_price / 100) * 0.5 * GREATEST(GREATEST(IFNULL(d.area, 0), 1) - 2000, 0)
+    ) / 100) * 100;
 
 UPDATE analysis a
 SET a.total_cost = (

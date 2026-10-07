@@ -20,6 +20,8 @@ import java.util.Set;
  * 기본료는 하자 하나를 손보는 최소 작업비(정책값)로, 8㎠ 흠집이 수백 원으로 나오지 않게 한다.
  * ㎠당 단가는 ㎡당 표준시장단가의 1/100로 정한다(정책값). 산술 환산(1/10,000)을 쓰면 면적분이 거의 0이고,
  * 시공 단위(벽지 1폭)로 올림하면 면적이 달라도 금액이 전부 같아져 둘 다 쓰지 않는다.
+ * 큰 하자는 실제로 벽지 1폭을 통째로 가는 비용에 가까워지므로, 2,000㎠를 넘는 면적분은 단가의 절반만 적용한다.
+ * 초과분 단가가 0이 아니라서 면적이 커지면 금액은 항상 커진다(역전 없음).
  * 총액 = 하자별 금액 합 + 포함된 하자 종류 중 가장 비싼 출장비 한 번.
  */
 @Component
@@ -34,6 +36,9 @@ public class RepairCostCalculator {
     private static final double M2_PRICE_TO_CM2_PRICE = 100d;
     /** 면적이 0으로 오더라도 하자는 있으므로 최소 이 면적으로 계산한다. */
     private static final double MIN_AREA_CM2 = 1d;
+    /** 이 면적(㎠)까지는 ㎠당 단가를 그대로, 넘는 부분은 LARGE_AREA_RATE를 곱한 단가로 계산한다. */
+    private static final double FULL_RATE_AREA_CM2 = 2_000d;
+    private static final double LARGE_AREA_RATE = 0.5d;
 
     private final RepairUnitPriceRepository repairUnitPriceRepository;
     private final RepairVisitFeeRepository repairVisitFeeRepository;
@@ -50,7 +55,9 @@ public class RepairCostCalculator {
 
         double area = Math.max(MIN_AREA_CM2, areaCm2 != null ? areaCm2 : 0d);
         double pricePerCm2 = unitPrice.getUnitPrice() / M2_PRICE_TO_CM2_PRICE;
-        return roundUp(BASE_FEE + pricePerCm2 * area);
+        double fullRateArea = Math.min(area, FULL_RATE_AREA_CM2);
+        double largeArea = Math.max(area - FULL_RATE_AREA_CM2, 0d);
+        return roundUp(BASE_FEE + pricePerCm2 * fullRateArea + pricePerCm2 * LARGE_AREA_RATE * largeArea);
     }
 
     /** 하자 종류 중 가장 비싼 출장비. 하자별 금액과 같이 100원 단위로 올린다. 하자가 없으면 0. */

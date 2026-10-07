@@ -12,6 +12,7 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 하자 종류별 자가 수리 준비물 기본 데이터.
@@ -25,12 +26,22 @@ public class RepairSupplyInitializer implements ApplicationRunner {
 
     private static final String COUPANG_SEARCH_URL = "https://www.coupang.com/np/search?q=";
 
+    /**
+     * 제품 사진으로 고정하는 준비물. 카카오 이미지 검색이 엉뚱한 사진(유튜브 썸네일, 블로그 배너)을 돌려주는 항목만 넣는다.
+     * 기동할 때마다 DB 값을 이 URL로 맞추므로, 검색 결과가 먼저 들어가 있어도 덮어쓴다.
+     */
+    private static final Map<String, String> FIXED_IMAGE_URLS = Map.of(
+            "만능 접착제", "https://st.kakaocdn.net/shophow/p/B5266708563.jpg?ut=20260221001830",
+            "보수용 퍼티", "https://st.kakaocdn.net/shophow/p/A5266741072.jpg?ut=20260221002338"
+    );
+
     private final RepairSupplyRepository repairSupplyRepository;
     private final KakaoImageClient kakaoImageClient;
 
     @Override
     public void run(ApplicationArguments args) {
         seedIfEmpty();
+        pinFixedImages();
         fillMissingImages();
     }
 
@@ -54,12 +65,18 @@ public class RepairSupplyInitializer implements ApplicationRunner {
                 supply("STAIN", "다목적 세정제", 6500, "다목적 세정제", 2),
                 supply("STAIN", "방수 코팅 스프레이", 12000, "방수 코팅 스프레이", 3),
 
-                // 카카오 이미지 검색이 엉뚱한 사진(유튜브 썸네일, 블로그 배너)을 돌려줘서 제품 사진으로 고정
-                supply("BREAKAGE", "만능 접착제", 7500, "만능 접착제", 1,
-                        "https://st.kakaocdn.net/shophow/p/B5266708563.jpg?ut=20260221001830"),
-                supply("BREAKAGE", "보수용 퍼티", 9900, "보수용 퍼티", 2,
-                        "https://st.kakaocdn.net/shophow/p/A5266741072.jpg?ut=20260221002338")
+                supply("BREAKAGE", "만능 접착제", 7500, "만능 접착제", 1),
+                supply("BREAKAGE", "보수용 퍼티", 9900, "보수용 퍼티", 2)
         ));
+    }
+
+    /** 고정 사진이 정해진 준비물은 DB에 다른 URL(검색 결과)이 있어도 고정 URL로 바꾼다. */
+    private void pinFixedImages() {
+        List<RepairSupply> changed = repairSupplyRepository.findByNameIn(FIXED_IMAGE_URLS.keySet()).stream()
+                .filter(supply -> !FIXED_IMAGE_URLS.get(supply.getName()).equals(supply.getImageUrl()))
+                .peek(supply -> supply.updateImageUrl(FIXED_IMAGE_URLS.get(supply.getName())))
+                .toList();
+        repairSupplyRepository.saveAll(changed);
     }
 
     private void fillMissingImages() {
@@ -82,18 +99,12 @@ public class RepairSupplyInitializer implements ApplicationRunner {
         return supply.getName();
     }
 
+    /** 이미지는 비워 두고, 고정 사진이 있으면 pinFixedImages가, 없으면 fillMissingImages가 채운다. */
     private RepairSupply supply(String defectType, String name, int price, String searchKeyword, int sortOrder) {
-        return supply(defectType, name, price, searchKeyword, sortOrder, null);
-    }
-
-    /** imageUrl을 주면 기동 시 이미지 검색을 건너뛰고 그 사진을 그대로 쓴다. */
-    private RepairSupply supply(String defectType, String name, int price, String searchKeyword, int sortOrder,
-                                String imageUrl) {
         return RepairSupply.builder()
                 .defectType(defectType)
                 .name(name)
                 .price(price)
-                .imageUrl(imageUrl)
                 .purchaseUrl(COUPANG_SEARCH_URL + URLEncoder.encode(searchKeyword, StandardCharsets.UTF_8))
                 .sortOrder(sortOrder)
                 .build();

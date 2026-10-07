@@ -1,16 +1,23 @@
 package com.roomlog.global.infra;
 
 import com.roomlog.analysis.dto.AiCompareRequest;
+import com.roomlog.analysis.dto.AiDeleteDefectImagesRequest;
 import com.roomlog.analysis.dto.AiDetectionRequest;
 import com.roomlog.scan.dto.AiReconstructionRequest;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.List;
+
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class AiClient {
@@ -46,6 +53,24 @@ public class AiClient {
 
     public void requestDefectComparison(AiCompareRequest request) {
         restTemplate.postForObject(aiServerUrl + "/defect-comparison", authEntity(request), Void.class);
+    }
+
+    /** 스캔 하나가 AI 서버 S3에 남긴 파일(3D 모델·썸네일 등)을 모두 지운다. */
+    public void deleteScanFiles(Long scanId) {
+        restTemplate.exchange(aiServerUrl + "/scans/" + scanId, HttpMethod.DELETE, authEntity(null), Void.class);
+    }
+
+    /** 하자 이미지 URL 목록을 AI 서버 S3에서 지운다. AI 서버 주소 형식이 아닌 URL은 건너뛰고 skipped로 돌려준다. */
+    public void deleteDefectImages(List<String> imageUrls) {
+        if (imageUrls.isEmpty()) {
+            return;
+        }
+        JsonNode body = restTemplate.exchange(aiServerUrl + "/defects", HttpMethod.DELETE,
+                authEntity(new AiDeleteDefectImagesRequest(imageUrls)), JsonNode.class).getBody();
+        JsonNode skipped = body == null ? null : body.path("data").path("skipped");
+        if (skipped != null && skipped.isArray() && !skipped.isEmpty()) {
+            log.warn("AI 서버가 삭제를 건너뛴 하자 이미지 URL(수동 정리 필요): {}", skipped);
+        }
     }
 
     private <T> HttpEntity<T> authEntity(T body) {

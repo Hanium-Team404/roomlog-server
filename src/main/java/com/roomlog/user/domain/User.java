@@ -63,8 +63,4 @@ public class User {
     public void updateMainHouseId(Long mainHouseId) {
         this.mainHouseId = mainHouseId;
     }
-
-    public void softDelete() {
-        this.isDeleted = true;
-    }
 }

@@ -35,7 +35,7 @@ public class UserController {
         return ApiResponse.success(200, "내 정보 수정에 성공했습니다.", response);
     }
 
-    @Operation(summary = "M04. 회원 탈퇴", description = "계정을 삭제합니다. (soft delete)", tags = "7. MyPage")
+    @Operation(summary = "M04. 회원 탈퇴", description = "계정과 모든 데이터(집·방·스캔·분석·하자·견적·수리·챗봇 기록·파일)를 즉시 삭제합니다.", tags = "7. MyPage")
     @DeleteMapping
     public ApiResponse<DeleteUserResponse> deleteUser(@AuthenticationPrincipal LoginUser loginUser) {
         DeleteUserResponse response = userService.deleteUser(loginUser.userId());

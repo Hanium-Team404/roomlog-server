@@ -1,7 +1,6 @@
 package com.roomlog.user.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.roomlog.user.domain.User;
 import lombok.Getter;
 
 @Getter
@@ -18,7 +17,7 @@ public class DeleteUserResponse {
         this.isDeleted = isDeleted;
     }
 
-    public static DeleteUserResponse from(User user) {
-        return new DeleteUserResponse(user.getId(), user.isDeleted());
+    public static DeleteUserResponse of(Long userId) {
+        return new DeleteUserResponse(userId, true);
     }
 }

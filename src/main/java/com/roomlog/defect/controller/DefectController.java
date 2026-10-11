@@ -1,5 +1,6 @@
 package com.roomlog.defect.controller;
 
+import com.roomlog.defect.dto.GetDefectDetailResponse;
 import com.roomlog.defect.dto.GetMainHouseDefectsResponse;
 import com.roomlog.defect.dto.GetSelfRepairResponse;
 import com.roomlog.defect.service.DefectService;
@@ -38,6 +39,21 @@ public class DefectController {
 
         GetMainHouseDefectsResponse response = defectService.getMainHouseDefects(loginUser.userId());
         return ApiResponse.success(200, "하자 목록 조회에 성공했습니다.", response);
+    }
+
+    @Operation(summary = "V06. 하자 상세 조회", description = """
+            하자 ID 하나로 상세 정보를 조회합니다. 방 하자 목록(V01)을 거치지 않고 하자 ID만으로 상세 화면에 진입할 때 사용합니다.
+
+            응답 필드는 V01의 defects[] 항목과 동일하며, 여기에 room_id(추천 업체 조회 등에 사용)와 room_image_url(방 썸네일, 하자 image_url이 없을 때 대체용, 없으면 null)이 추가됩니다.
+
+            [에러] 존재하지 않거나 삭제된 하자: DEFECT_001(404) / 다른 사용자의 하자: DEFECT_003(403)""", tags = "4. Viewer")
+    @GetMapping("/{defectId}")
+    public ApiResponse<GetDefectDetailResponse> getDefectDetail(
+            @AuthenticationPrincipal LoginUser loginUser,
+            @Parameter(description = "조회할 하자 ID", example = "12") @PathVariable Long defectId) {
+
+        GetDefectDetailResponse response = defectService.getDefectDetail(loginUser.userId(), defectId);
+        return ApiResponse.success(200, "하자 상세 조회에 성공했습니다.", response);
     }
 
     @Operation(summary = "V05. 자가 수리 안내 조회", description = """

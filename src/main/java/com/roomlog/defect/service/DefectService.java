@@ -5,6 +5,7 @@ import com.roomlog.analysis.repository.AnalysisRepository;
 import com.roomlog.defect.domain.Defect;
 import com.roomlog.defect.dto.DefectChatContext;
 import com.roomlog.defect.dto.DefectItemResponse;
+import com.roomlog.defect.dto.GetDefectDetailResponse;
 import com.roomlog.defect.dto.GetDefectEntryResponse;
 import com.roomlog.defect.dto.GetMainHouseDefectsResponse;
 import com.roomlog.defect.dto.MainHouseDefectItemResponse;
@@ -57,6 +58,31 @@ public class DefectService {
         defects.forEach(selfRepairService::prefetchGuide);
 
         return GetDefectEntryResponse.from(room, defects.stream().map(DefectItemResponse::from).toList());
+    }
+
+    /**
+     * 하자 ID 하나로 상세 정보를 반환한다. 방 하자 목록(V01)을 거치지 않고 하자 ID만 들고 상세 화면에 들어올 때 쓴다.
+     * 하자 → 분석 → 방 → 집 순으로 따라가 요청한 사용자의 집에 속한 하자인지 확인한다.
+     */
+    @Transactional(readOnly = true)
+    public GetDefectDetailResponse getDefectDetail(Long userId, Long defectId) {
+        Defect defect = defectRepository.findById(defectId)
+                .orElseThrow(() -> new CustomException(ErrorCode.DEFECT_001));
+
+        Analysis analysis = analysisRepository.findById(defect.getAnalysisId())
+                .orElseThrow(() -> new CustomException(ErrorCode.ANALYSIS_001));
+
+        Room room = roomRepository.findById(analysis.getRoomId())
+                .orElseThrow(() -> new CustomException(ErrorCode.ROOM_001));
+
+        if (houseRepository.findByIdAndUserId(room.getHouseId(), userId).isEmpty()) {
+            throw new CustomException(ErrorCode.DEFECT_003);
+        }
+
+        // 상세 화면에서 바로 이어지는 자가 수리 안내(V05)를 미리 만들어둔다(백그라운드, 응답을 막지 않음).
+        selfRepairService.prefetchGuide(defect);
+
+        return GetDefectDetailResponse.of(defect, room);
     }
 
     /**

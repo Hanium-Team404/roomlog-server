@@ -34,7 +34,7 @@ public class DefectItemResponse {
     @JsonProperty("region_3d")
     private final List<RegionPoint> region3d;
 
-    private DefectItemResponse(Defect defect) {
+    protected DefectItemResponse(Defect defect) {
         this.defectId = defect.getId();
         this.analysisId = defect.getAnalysisId();
         this.type = defect.getType();
